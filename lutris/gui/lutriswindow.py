@@ -195,7 +195,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
             ),
             ("install_more", "Install (add) another version", self.on_install_clicked),
             ("remove", "Remove", self.on_remove_game),
-            ("hide", "Hide", self.hide_game),
+            ("hide", "Hide from game list", self.hide_game),
             ("view", "View on Lutris.net", self.on_view_game),
         ]
         self.menu = ContextualMenu(main_entries)
@@ -220,27 +220,6 @@ class LutrisWindow(Gtk.ApplicationWindow):
         # Timers
         steamapps_paths = steam.get_steamapps_paths(flat=True)
         self.steam_watcher = SteamWatcher(steamapps_paths, self.on_steam_game_changed)
-
-    def on_toggle_hidden(self, action, value):
-        self.show_hidden_games = value
-        action.set_state(value)
-
-        # Add or remove hidden games
-        ignores = settings.read_setting("library_ignores",
-                                        section="lutris",
-                                        default="").split(",")
-        if value:
-            # Re-add
-            for raw_id in ignores:
-                self.view.add_game_by_id(int(raw_id))
-        else:
-            # Remove
-             for raw_id in ignores:
-                self.view.remove_game(int(raw_id))
-        
-        settings.write_setting("show_hidden_games",
-                               str(self.show_hidden_games).lower(),
-                               section="lutris")
         
     def _init_actions(self):
         Action = namedtuple(
@@ -899,6 +878,27 @@ class LutrisWindow(Gtk.ApplicationWindow):
             self.view.update_image(game_id, is_installed=False)
         self.sidebar_listbox.update()
 
+    def on_toggle_hidden(self, action, value):
+        self.show_hidden_games = value
+        action.set_state(value)
+
+        # Add or remove hidden games
+        ignores = settings.read_setting("library_ignores",
+                                        section="lutris",
+                                        default="").split(",")
+        if value:
+            # Re-add
+            for raw_id in ignores:
+                self.view.add_game_by_id(int(raw_id))
+        else:
+            # Remove
+             for raw_id in ignores:
+                self.view.remove_game(int(raw_id))
+        
+        settings.write_setting("show_hidden_games",
+                               str(self.show_hidden_games).lower(),
+                               section="lutris")
+        
     def hide_game(self, _widget):
         game = Game(self.view.selected_game)
 
