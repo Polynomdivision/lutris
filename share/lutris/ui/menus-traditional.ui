@@ -87,6 +87,10 @@
           <attribute name="label">Use _dark theme</attribute>
           <attribute name="action">win.use-dark-theme</attribute>
         </item>
+        <item>
+          <attribute name="label">Show hidden games</attribute>
+          <attribute name="action">win.show-hidden-games</attribute>
+        </item>
       </section>
       <section>
         <item>

@@ -114,7 +114,10 @@ class LutrisWindow(Gtk.ApplicationWindow):
         self.show_tray_icon = (
             settings.read_setting("show_tray_icon", default="false").lower() == "true"
         )
-
+        self.show_hidden_games = (
+            settings.read_setting("show_hidden_games", default="true").lower() == "true"
+        )
+        
         # Window initialization
         self.game_list = pga.get_games(show_installed_first=self.show_installed_first)
         self.game_store = GameStore(
@@ -207,6 +210,14 @@ class LutrisWindow(Gtk.ApplicationWindow):
         # Timers
         steamapps_paths = steam.get_steamapps_paths(flat=True)
         self.steam_watcher = SteamWatcher(steamapps_paths, self.on_steam_game_changed)
+
+    def on_toggle_hidden(self, action, value):
+        self.show_hidden_games = value
+        action.set_state(value)
+
+        settings.write_setting("show_hidden_games",
+                               str(self.show_hidden_games).lower(),
+                               section="lutris")
         
     def _init_actions(self):
         Action = namedtuple(
@@ -226,6 +237,11 @@ class LutrisWindow(Gtk.ApplicationWindow):
             "add-game": Action(self.on_add_game_button_clicked),
             "start-game": Action(self.on_game_run, enabled=False),
             "remove-game": Action(self.on_remove_game, enabled=False),
+            "show-hidden-games": Action(
+                self.on_toggle_hidden,
+                type="b",
+                default=self.show_hidden_games
+            ),
             "preferences": Action(self.on_preferences_activate),
             "manage-runners": Action(self.on_manage_runners),
             "about": Action(self.on_about_clicked),

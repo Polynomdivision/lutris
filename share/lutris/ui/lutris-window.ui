@@ -616,6 +616,14 @@
         <child>
           <object class="GtkModelButton">
             <property name="visible">1</property>
+            <property name="action-name">win.show-hidden-games</property>
+            <property name="text" translatable="yes">Show hidden games</property>
+            <property name="use-underline">1</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkModelButton">
+            <property name="visible">1</property>
             <property name="action-name">win.show-side-bar</property>
             <accelerator key="f9" signal="clicked"/>
             <property name="text" translatable="yes">Show _Side Panel</property>
