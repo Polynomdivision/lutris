@@ -155,15 +155,7 @@ def get_games(
     else:
         query += " ORDER BY slug"
 
-    # Figure out what we want to ignore in the library
-    # TODO: Handle whitespaces in the elements?
-    ignores = settings.read_setting("library_ignores",
-                                        section="lutris",
-                                        default="").split(",")
-    all_games = sql.db_query(PGA_DB, query, tuple(params))
-    
-    games = filter(lambda x: not x["name"] in ignores, all_games)
-    return list(games)
+    return sql.db_query(PGA_DB, query, tuple(params))
 
 def get_game_ids():
     """Return a list of ids of games in the database."""

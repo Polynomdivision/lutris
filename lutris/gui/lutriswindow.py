@@ -119,7 +119,17 @@ class LutrisWindow(Gtk.ApplicationWindow):
         )
         
         # Window initialization
-        self.game_list = pga.get_games(show_installed_first=self.show_installed_first)
+        game_list_raw = pga.get_games(show_installed_first=self.show_installed_first)
+        if self.show_hidden_games:
+            self.game_list = game_list_raw
+        else:
+            # Load the ignores and filter the game list
+            ignores = settings.read_setting("library_ignores",
+                                                section="lutris",
+                                                default="").split(",")
+            should_be_hidden = lambda game: not str(game.id) in ignores
+            self.game_list = list(filter(should_be_hidden, game_list_raw))
+        
         self.game_store = GameStore(
             [],
             self.icon_type,
@@ -215,6 +225,19 @@ class LutrisWindow(Gtk.ApplicationWindow):
         self.show_hidden_games = value
         action.set_state(value)
 
+        # Add or remove hidden games
+        ignores = settings.read_setting("library_ignores",
+                                        section="lutris",
+                                        default="").split(",")
+        if value:
+            # Re-add
+            for raw_id in ignores:
+                self.view.add_game_by_id(int(raw_id))
+        else:
+            # Remove
+             for raw_id in ignores:
+                self.view.remove_game(int(raw_id))
+        
         settings.write_setting("show_hidden_games",
                                str(self.show_hidden_games).lower(),
                                section="lutris")
@@ -878,7 +901,6 @@ class LutrisWindow(Gtk.ApplicationWindow):
 
     def hide_game(self, _widget):
         game = Game(self.view.selected_game)
-        game_name = game.name
 
         # Get the configured ignores, append our new ignore and write
         # it back
@@ -890,7 +912,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
         #       ",<new game's name>" to the settings file.
         ignores = ignores_str.split(',') if ignores_str != "" else []
 
-        ignores += [game_name]
+        ignores += [str(game.id)]
         settings.write_setting("library_ignores",
                                ','.join(ignores),
                                section="lutris")
