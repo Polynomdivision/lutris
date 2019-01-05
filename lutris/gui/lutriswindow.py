@@ -127,7 +127,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
             ignores = settings.read_setting("library_ignores",
                                                 section="lutris",
                                                 default="").split(",")
-            should_be_hidden = lambda game: not str(game.id) in ignores
+            should_be_hidden = lambda game: not str(game["id"]) in ignores
             self.game_list = list(filter(should_be_hidden, game_list_raw))
         
         self.game_store = GameStore(
