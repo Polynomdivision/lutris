@@ -182,6 +182,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
             ),
             ("install_more", "Install (add) another version", self.on_install_clicked),
             ("remove", "Remove", self.on_remove_game),
+            ("hide", "Hide", self.hide_game),
             ("view", "View on Lutris.net", self.on_view_game),
         ]
         self.menu = ContextualMenu(main_entries)
@@ -206,7 +207,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
         # Timers
         steamapps_paths = steam.get_steamapps_paths(flat=True)
         self.steam_watcher = SteamWatcher(steamapps_paths, self.on_steam_game_changed)
-
+        
     def _init_actions(self):
         Action = namedtuple(
             "Action", ("callback", "type", "enabled", "default", "accel")
@@ -859,6 +860,28 @@ class LutrisWindow(Gtk.ApplicationWindow):
             self.view.update_image(game_id, is_installed=False)
         self.sidebar_listbox.update()
 
+    def hide_game(self, _widget):
+        game = Game(self.view.selected_game)
+        game_name = game.name
+
+        # Get the configured ignores, append our new ignore and write
+        # it back
+        ignores_str = settings.read_setting("libary_ignores",
+                                            section="lutris",
+                                            default="")
+         # NOTE: This here is needed as we would otherwise end up with ignores
+        #       being equal to [""], which then would result in us writing back
+        #       ",<new game's name>" to the settings file.
+        ignores = ignores_str.split(',') if ignores_str != "" else []
+
+        ignores += [game_name]
+        settings.write_setting("library_ignores",
+                               ','.join(ignores),
+                               section="lutris")
+
+        # Update the GUI
+        self.view.remove_game(game.id)
+        
     def on_browse_files(self, _widget):
         """Callback to open a game folder in the file browser"""
         game = Game(self.view.selected_game)
