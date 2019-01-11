@@ -365,7 +365,7 @@ class LutrisWindow(Gtk.ApplicationWindow):
     def hidden_state_change(self, action, value):
         """Hides or shows the hidden games"""
         self.show_hidden_games = value
-        action.set_state(value);
+        action.set_state(value)
 
         # Add or remove hidden games
         ignores = pga.get_hidden_ids()
@@ -375,12 +375,12 @@ class LutrisWindow(Gtk.ApplicationWindow):
 
         # If we have to show the hidden games now, we need to add them back to
         # the view. If we need to hide them, we just remove them from the view
-        for id in ignores:
+        for game_id in ignores:
             if self.show_hidden_games:
-                self.view.add_game_by_id(id)
+                self.view.add_game_by_id(game_id)
             else:
-                self.view.remove_game(id)
-                                
+                self.view.remove_game(game_id)
+
     @property
     def current_view_type(self):
         """Returns which kind of view is currently presented (grid or list)"""

@@ -402,16 +402,16 @@ def get_hidden_ids():
     """Return a list of game IDs to be excluded from the library view"""
     # Load the ignore string and filter out empty strings to prevent issues
     ignores_raw = settings.read_setting("library_ignores",
-                                    section="lutris",
-                                    default="").split(",")
+                                        section="lutris",
+                                        default="").split(",")
     ignores = list(filter(lambda x: not x == "", ignores_raw))
 
     # Turn the strings into integers
-    return list(map(lambda x: int(x), ignores))
+    return list(map(int, ignores))
 
 def set_hidden_ids(games):
     """Writes a list of game IDs that are to be hidden into the config file"""
-    ignores_str = list(map(lambda id: str(id), games))
+    ignores_str = list(map(str, games))
     settings.write_setting("library_ignores",
                            ','.join(ignores_str),
                            section="lutris")

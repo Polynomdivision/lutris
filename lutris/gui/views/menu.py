@@ -4,7 +4,7 @@ from gi.repository import Gtk
 from lutris.game import Game
 
 from lutris.util import xdgshortcuts
-from lutris import runners, settings
+from lutris import runners, settings, pga
 from lutris.gui.views import (
     COL_ID,
     COL_SLUG,
@@ -37,20 +37,9 @@ class ContextualMenu(Gtk.Menu):
 
     @staticmethod
     def is_game_hidden(game):
-        # Get the configured ignores, append our new ignore and write
-        # it back
-        ignores_str = settings.read_setting("library_ignores",
-                                            section="lutris",
-                                            default="")
+        """Returns whether a game is on the list of hidden games"""
+        return game.id in pga.get_hidden_ids()
 
-        # NOTE: This here is needed as we would otherwise end up with ignores
-        #       being equal to [""], which then would result in us writing back
-        #       ",<new game's name>" to the settings file.
-        ignores_raw = ignores_str.split(',') if ignores_str != "" else []
-        ignores = list(map(lambda x: int(x), ignores_raw))
-
-        return game.id in ignores
-    
     @staticmethod
     def get_hidden_entries(game):
         """Return a dictionary of actions that should be hidden for a game"""
