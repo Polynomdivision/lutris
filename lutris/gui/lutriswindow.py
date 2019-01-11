@@ -123,7 +123,6 @@ class LutrisWindow(Gtk.ApplicationWindow):
         
         # Window initialization
         game_list_raw = pga.get_games(show_installed_first=self.show_installed_first)
-        print("Show hidden games: " + str(self.show_hidden_games))
         if self.show_hidden_games:
             self.game_list = game_list_raw
         else:
@@ -363,7 +362,8 @@ class LutrisWindow(Gtk.ApplicationWindow):
                                section="lutris")
 
         # Update the GUI
-        self.view.remove_game(game.id)
+        if not self.show_hidden_games:
+            self.view.remove_game(game.id)
 
     def on_unhide_game(self, _widget):
         game = Game(self.view.selected_game)
@@ -392,18 +392,16 @@ class LutrisWindow(Gtk.ApplicationWindow):
                                             section="lutris",
                                             default="").split(",")
         ignores = list(filter(lambda x: not x == "", ignores_raw))
+        settings.write_setting("show_hidden_games",
+                               str(self.show_hidden_games).lower(),
+                               section="lutris")
 
-        # TODO: Games are hidden when removing while show-hidden is true
         for id in ignores:
             if value:
                 self.view.add_game_by_id(int(id))
             else:
                 self.view.remove_game(int(id))
-                
-        settings.write_setting("show_hidden_games",
-                               str(self.show_hidden_games).lower(),
-                               section="lutris")
-                
+                                
     @property
     def current_view_type(self):
         """Returns which kind of view is currently presented (grid or list)"""
