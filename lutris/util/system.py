@@ -170,7 +170,7 @@ class LinuxSystem:
 
     def get_requirements(self, include_optional=True):
         """Return used system requirements"""
-        _requirements = self.required_components
+        _requirements = self.required_components.copy()
         if include_optional:
             _requirements += self.optional_components
             if drivers.is_amd():
@@ -363,11 +363,6 @@ def get_pid(program, multiple=False):
     if multiple:
         return pids
     return pids[0]
-
-
-def get_all_pids():
-    """Return all pids of currently running processes"""
-    return [int(pid) for pid in os.listdir("/proc") if pid.isdigit()]
 
 
 def kill_pid(pid):

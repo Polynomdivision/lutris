@@ -20,6 +20,7 @@
             <property name="receives_default">False</property>
             <property name="action_name">win.connect</property>
             <property name="relief">none</property>
+            <property name="xalign">0</property>
           </object>
           <packing>
             <property name="expand">False</property>
@@ -34,6 +35,7 @@
             <property name="receives_default">False</property>
             <property name="action_name">win.disconnect</property>
             <property name="relief">none</property>
+            <property name="xalign">0</property>
             <child>
               <object class="GtkBox">
                 <property name="visible">True</property>
@@ -84,6 +86,7 @@
             <property name="receives_default">False</property>
             <property name="action_name">win.register-account</property>
             <property name="relief">none</property>
+            <property name="xalign">0</property>
           </object>
           <packing>
             <property name="expand">False</property>
@@ -159,6 +162,7 @@
             <property name="receives_default">False</property>
             <property name="action_name">win.add-game</property>
             <property name="relief">none</property>
+            <property name="xalign">0</property>
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
@@ -181,6 +185,7 @@
             <property name="receives_default">False</property>
             <property name="action_name">win.sync-local</property>
             <property name="relief">none</property>
+            <property name="xalign">0</property>
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
@@ -321,36 +326,6 @@
             <property name="can_focus">True</property>
             <property name="receives_default">False</property>
             <property name="action_name">win.view-sorting</property>
-            <property name="text" translatable="yes">_Runner</property>
-            <property name="action-target">'runner'</property>
-          </object>
-          <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
-            <property name="position">6</property>
-          </packing>
-        </child>
-        <child>
-          <object class="GtkModelButton">
-            <property name="visible">True</property>
-            <property name="can_focus">True</property>
-            <property name="receives_default">False</property>
-            <property name="action_name">win.view-sorting</property>
-            <property name="text" translatable="yes">_Platform</property>
-            <property name="action-target">'platform'</property>
-          </object>
-          <packing>
-            <property name="expand">False</property>
-            <property name="fill">True</property>
-            <property name="position">7</property>
-          </packing>
-        </child>
-        <child>
-          <object class="GtkModelButton">
-            <property name="visible">True</property>
-            <property name="can_focus">True</property>
-            <property name="receives_default">False</property>
-            <property name="action_name">win.view-sorting</property>
             <property name="text" translatable="yes">_Last played</property>
             <property name="action-target">'lastplayed'</property>
           </object>
@@ -446,6 +421,7 @@
     <property name="window_position">center</property>
     <property name="icon_name">lutris</property>
     <signal name="destroy" handler="on_destroy" swapped="no"/>
+    <signal name="size-allocate" handler="on_resize" swapped="no"/>
     <child type="titlebar">
       <object class="GtkHeaderBar" id="header_bar">
         <property name="visible">True</property>
@@ -739,29 +715,6 @@
                     <property name="expand">False</property>
                     <property name="fill">True</property>
                     <property name="position">0</property>
-                  </packing>
-                </child>
-                <child>
-                  <object class="GtkRevealer" id="infobar_revealer">
-                    <property name="visible">True</property>
-                    <property name="can_focus">False</property>
-                    <child>
-                      <object class="GtkBox" id="infobar_box">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="margin_start">12</property>
-                        <property name="margin_end">12</property>
-                        <property name="margin_top">6</property>
-                        <property name="margin_bottom">6</property>
-                        <property name="orientation">vertical</property>
-                        <property name="spacing">6</property>
-                      </object>
-                    </child>
-                  </object>
-                  <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
-                    <property name="position">1</property>
                   </packing>
                 </child>
                 <child>

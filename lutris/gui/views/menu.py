@@ -3,14 +3,9 @@ from gi.repository import Gtk
 
 from lutris.game import Game
 
-from lutris.util import xdgshortcuts
-from lutris import runners, settings, pga
-from lutris.gui.views import (
-    COL_ID,
-    COL_SLUG,
-    COL_RUNNER,
-    COL_INSTALLED
-)
+from lutris import runners, pga
+from lutris.game_actions import GameActions
+from lutris.gui.views import COL_ID
 
 
 class ContextualMenu(Gtk.Menu):
@@ -20,10 +15,9 @@ class ContextualMenu(Gtk.Menu):
 
     def add_menuitems(self, entries):
         for entry in entries:
-            name = entry[0]
-            label = entry[1]
+            name, label, callback = entry
             action = Gtk.Action(name=name, label=label)
-            action.connect("activate", entry[2])
+            action.connect("activate", callback)
             menuitem = action.create_menu_item()
             menuitem.action_id = name
             self.append(menuitem)
@@ -94,12 +88,15 @@ class ContextualMenu(Gtk.Menu):
                 self.add_menuitems(runner_entries)
         self.show_all()
 
-        hidden_entries = self.get_hidden_entries(game)
-        disabled_entries = self.get_disabled_entries(game)
+        game_actions = GameActions()
+        game_actions.set_game(game=game)
+
+        displayed = game_actions.get_displayed_entries()
+        disabled_entries = game_actions.get_disabled_entries()
         for menuitem in self.get_children():
             if not isinstance(menuitem, Gtk.ImageMenuItem):
                 continue
-            menuitem.set_visible(not hidden_entries.get(menuitem.action_id))
+            menuitem.set_visible(displayed.get(menuitem.action_id, True))
             menuitem.set_sensitive(not disabled_entries.get(menuitem.action_id))
 
         super().popup(None, None, None, None, event.button, event.time)

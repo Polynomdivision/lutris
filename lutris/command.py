@@ -5,9 +5,6 @@ import sys
 import shlex
 import subprocess
 import contextlib
-import signal
-import weakref
-import functools
 from textwrap import dedent
 
 from gi.repository import GLib
@@ -15,72 +12,14 @@ from gi.repository import GLib
 from lutris import settings
 from lutris import runtime
 from lutris.util.log import logger
-from lutris.util.process import Process
-from lutris.util.monitor import ProcessMonitor
 from lutris.util import system
+from lutris.util.signals import PID_HANDLERS, register_handler
 
-HEARTBEAT_DELAY = 2000  # Number of milliseconds between each heartbeat
-DEFAULT_MAX_CYCLES = 5
-
-
-def _reentrancy_guard(func):
-    """
-    Prevents an argumentless method from having two invocations running
-    at the same time. self must be hashable.
-    """
-    guards = weakref.WeakSet()
-
-    @functools.wraps(func)
-    def inner(self):
-        if self not in guards:
-            guards.add(self)
-            try:
-                return func(self)
-            finally:
-                guards.remove(self)
-
-    return inner
-
-
-#
-# This setup uses SIGCHLD as a trigger to check on the runner process
-# in order to detect the monitoredcommand's complete exit early instead
-# of on the next polling interval. Because processes can be created
-# and exited very rapidly, it includes a 16 millisecond debounce.
-#
-_commands = weakref.WeakSet()
-_timeout_set = False
-
-
-def _trigger_early_poll():
-    global _timeout_set
-    try:
-        # prevent changes to size during iteration
-        for command in set(_commands):
-            command.watch_children()
-    except Exception:
-        logger.exception("Signal handler exception")
-    finally:
-        _timeout_set = False
-    return False
-
-
-def _sigchld_handler(signum, frame):
-    global _timeout_set
-    try:
-        os.wait3(os.WNOHANG)
-    except ChildProcessError:  # already handled by someone else
-        return
-    if _commands and not _timeout_set:
-        GLib.timeout_add(16, _trigger_early_poll)
-        _timeout_set = True
-
-
-signal.signal(signal.SIGCHLD, _sigchld_handler)
+WRAPPER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "lutris-wrapper")
 
 
 class MonitoredCommand:
-    """Run the game."""
+    """Exexcutes a commmand while keeping track of its state"""
 
     def __init__(
             self,
@@ -99,6 +38,9 @@ class MonitoredCommand:
             self.env = {}
         else:
             self.env = env
+
+        self.env['PYTHONPATH'] = ':'.join(sys.path)  # What the actual fuck ?!?!?!?!?!
+
         self.original_env = {}
         self.command = command
         self.runner = runner
@@ -118,14 +60,21 @@ class MonitoredCommand:
         self.set_log_buffer(log_buffer)
         self.stdout_monitor = None
         self.watch_children_running = False
+        self.include_processes = include_processes or []
+        self.exclude_processes = exclude_processes or []
 
         # Keep a copy of previously running processes
         self.cwd = self.get_cwd(cwd)
-        self.process_monitor = ProcessMonitor(
-            include_processes,
-            exclude_processes,
-            "run_in_term.sh" if self.terminal else None
-        )
+
+    @property
+    def wrapper_command(self):
+        """Return launch arguments for the wrapper script"""
+
+        return [
+            WRAPPER_SCRIPT,
+            str(len(self.include_processes)),
+            str(len(self.exclude_processes)),
+        ] + self.include_processes + self.exclude_processes + self.command
 
     def set_log_buffer(self, log_buffer):
         """Attach a TextBuffer to this command enables the buffer handler"""
@@ -158,28 +107,31 @@ class MonitoredCommand:
 
     def start(self):
         """Run the thread."""
-        logger.debug("Running command: %s", " ".join(self.command))
+        logger.debug("Running %s", " ".join(self.wrapper_command))
         for key, value in self.env.items():
             logger.debug("ENV: %s=\"%s\"", key, value)
+            pass
 
         if self.terminal:
             self.game_process = self.run_in_terminal()
         else:
             env = self.apply_environment()
-            self.game_process = self.execute_process(self.command, env)
+            self.game_process = self.execute_process(self.wrapper_command, env)
 
         if not self.game_process:
             logger.warning("No game process available")
             return
 
-        _commands.add(self)
+        register_handler(self.game_process.pid, self.on_stop)
+
         if self.watch:
-            GLib.timeout_add(HEARTBEAT_DELAY, self.watch_children)
             self.stdout_monitor = GLib.io_add_watch(
                 self.game_process.stdout,
                 GLib.IO_IN | GLib.IO_HUP,
                 self.on_stdout_output,
             )
+        else:
+            raise ValueError("Why do you use a MonitoredCommand if you're not going to watch it?")
 
     def log_handler_stdout(self, line):
         """Add the line to this command's stdout attribute"""
@@ -189,22 +141,36 @@ class MonitoredCommand:
         """Add the line to the associated LogBuffer object"""
         self.log_buffer.insert(self.log_buffer.get_end_iter(), line, -1)
 
-    def log_handler_console_output(self, line):
+    def log_handler_console_output(self, line):  # pylint: disable=no-self-use
         """Print the line to stdout"""
         with contextlib.suppress(BlockingIOError):
             sys.stdout.write(line)
             sys.stdout.flush()
 
-    def on_stdout_output(self, fd, condition):
+    def on_stop(self, returncode):
+        """Callback registered on the SIGCHLD handler"""
+        logger.debug("The process has terminated with code %s", returncode)
+        self.is_running = False
+        self.return_code = returncode
+
+        resume_stop = self.stop()
+        if not resume_stop:
+            logger.info("Full shutdown prevented")
+            return False
+
+        return False
+
+    def on_stdout_output(self, stdout, condition):
+        """Called by the stdout monitor to dispatch output to log handlers"""
         if condition == GLib.IO_HUP:
             self.stdout_monitor = None
             return False
         if not self.is_running:
             return False
         try:
-            line = fd.readline().decode("utf-8", errors="ignore")
+            line = stdout.readline().decode("utf-8", errors="ignore")
         except ValueError:
-            # fd might be closed
+            # file_desc might be closed
             return True
         if "winemenubuilder.exe" in line:
             return True
@@ -225,20 +191,20 @@ class MonitoredCommand:
             'export %s="%s" ' % (key, value)
             for key, value in self.env.items()
         )
-        command = " ".join(['"%s"' % token for token in self.command])
+        command = " ".join(['"%s"' % token for token in self.wrapper_command])
         with open(script_path, "w") as script_file:
             script_file.write(dedent(
                 """#!/bin/sh
                 cd "%s"
                 %s
-                %s
-                exec sh # Keep term open
+                exec %s
                 """ % (self.cwd, exported_environment, command)
             ))
             os.chmod(script_path, 0o744)
         return self.execute_process([self.terminal, "-e", script_path])
 
     def execute_process(self, command, env=None):
+        """Execute and return a subprocess"""
         try:
             if self.cwd and not system.path_exists(self.cwd):
                 os.makedirs(self.cwd)
@@ -261,6 +227,7 @@ class MonitoredCommand:
             self.error = ex.strerror
 
     def restore_environment(self):
+        """Restore the environment to its original state"""
         logger.debug("Restoring environment")
         for key in self.original_env:
             if self.original_env[key] is None:
@@ -275,72 +242,30 @@ class MonitoredCommand:
     def stop(self):
         """Stops the current game process and cleans up the instance"""
         try:
-            _commands.remove(self)
-        except KeyError:  # may have never been added.
+            PID_HANDLERS.pop(self.game_process.pid)
+        except KeyError:
+            # This game has no stop handler
             pass
 
-        # Remove logger early to avoid issues with zombie processes
-        # (unconfirmed)
-        if self.stdout_monitor:
-            logger.debug("Detaching logger")
-            GLib.source_remove(self.stdout_monitor)
+        try:
+            self.game_process.terminate()
+        except ProcessLookupError:  # process already dead.
+            logger.debug("Management process looks dead already.")
 
         if hasattr(self, "stop_func"):
             resume_stop = self.stop_func()
             if not resume_stop:
                 return False
 
+        if self.stdout_monitor:
+            logger.debug("Detaching logger")
+            GLib.source_remove(self.stdout_monitor)
+        else:
+            logger.debug("logger already detached")
+
         self.restore_environment()
         self.is_running = False
         self.ready_state = False
-
-        return True
-
-    def get_root_process(self):
-        """Return root process, including Wine processes as children"""
-        process = Process(os.getpid())
-        if self.runner and self.runner.name.startswith("wine"):
-            # Track the correct version of wine for winetricks
-            wine_version = self.env.get("WINE") or None
-            for pid in self.runner.get_pids(wine_version):
-                wineprocess = Process(pid)
-                if wineprocess.name not in self.runner.core_processes:
-                    process.children.append(wineprocess)
-        return process
-
-    @_reentrancy_guard
-    def watch_children(self):
-        """Poke at the running process(es).
-
-        Return:
-            bool: True to keep monitoring, False to stop (Used by GLib.timeout_add)
-        """
-        if not self.game_process:
-            logger.error("No game process available")
-            return False
-        if not self.is_running:
-            logger.error("Game is not running")
-            return False
-        if not self.ready_state:
-            # Don't monitor processes until the process is in a ready state
-            self.process_monitor.cycles_without_children = 0
-            return True
-
-        if not self.process_monitor.get_process_status(self.get_root_process()):
-            self.is_running = False
-
-            resume_stop = self.stop()
-            if not resume_stop:
-                logger.info("Full shutdown prevented")
-                return False
-
-            if not self.process_monitor.children:
-                self.game_process.communicate()
-            else:
-                logger.debug("%d processes are still active", len(self.process_monitor.children))
-            self.return_code = self.game_process.returncode
-            return False
-
         return True
 
 

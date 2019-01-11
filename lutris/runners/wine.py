@@ -98,7 +98,6 @@ class wine(Runner):
 
     reg_prefix = "HKEY_CURRENT_USER/Software/Wine"
     reg_keys = {
-        "RenderTargetLockMode": r"%s/Direct3D" % reg_prefix,
         "Audio": r"%s/Drivers" % reg_prefix,
         "MouseWarpOverride": r"%s/DirectInput" % reg_prefix,
         "OffscreenRenderingMode": r"%s/Direct3D" % reg_prefix,
@@ -126,6 +125,7 @@ class wine(Runner):
             ("wineexec", "Run EXE inside wine prefix", self.run_wineexec),
             ("winecfg", "Wine configuration", self.run_winecfg),
             ("wine-regedit", "Wine registry", self.run_regedit),
+            ("winekill", "Kill all wine processes", self.run_winekill),
             ("winetricks", "Winetricks", self.run_winetricks),
             ("joycpl", "Joystick Control Panel", self.run_joycpl),
         ]
@@ -200,19 +200,11 @@ class wine(Runner):
                 "option": "custom_wine_path",
                 "label": "Custom Wine executable",
                 "type": "file",
+                "advanced": True,
                 "help": (
                     "The Wine executable to be used if you have "
                     'selected "Custom" as the Wine version.'
                 ),
-            },
-            {
-                "option": "esync",
-                "label": "Enable Esync",
-                "type": "extended_bool",
-                "help": "Enable eventfd-based synchronization (esync)",
-                "callback": esync_limit_callback,
-                "callback_on": True,
-                "active": True,
             },
             {
                 "option": "dxvk",
@@ -226,15 +218,26 @@ class wine(Runner):
             {
                 "option": "dxvk_version",
                 "label": "DXVK version",
+                "advanced": True,
                 "type": "choice_with_entry",
                 "choices": get_dxvk_choices,
                 "default": dxvk.DXVK_LATEST,
+            },
+            {
+                "option": "esync",
+                "label": "Enable Esync",
+                "type": "extended_bool",
+                "help": "Enable eventfd-based synchronization (esync)",
+                "callback": esync_limit_callback,
+                "callback_on": True,
+                "active": True,
             },
             {
                 "option": "x360ce-path",
                 "label": "Path to the game's executable, for x360ce support",
                 "type": "directory_chooser",
                 "help": "Locate the path for the game's executable for x360 support",
+                "advanced": True,
             },
             {
                 "option": "x360ce-dinput",
@@ -242,6 +245,7 @@ class wine(Runner):
                 "type": "bool",
                 "default": False,
                 "help": "Configure x360ce with dinput8.dll, required for some games",
+                "advanced": True,
             },
             {
                 "option": "x360ce-xinput9",
@@ -249,6 +253,7 @@ class wine(Runner):
                 "type": "bool",
                 "default": False,
                 "help": "Configure x360ce with xinput9_1_0.dll, required for some newer games",
+                "advanced": True,
             },
             {
                 "option": "dumbxinputemu",
@@ -256,6 +261,7 @@ class wine(Runner):
                 "type": "bool",
                 "default": False,
                 "help": "Use the dlls from kozec/dumbxinputemu",
+                "advanced": True,
             },
             {
                 "option": "xinput-arch",
@@ -267,6 +273,7 @@ class wine(Runner):
                     ("64 bit", "win64"),
                 ],
                 "default": "",
+                "advanced": True,
             },
             {
                 "option": "Desktop",
@@ -349,26 +356,6 @@ class wine(Runner):
                 ),
             },
             {
-                "option": "RenderTargetLockMode",
-                "label": "Render Target Lock Mode",
-                "type": "choice",
-                "choices": [
-                    ("Disabled", "disabled"),
-                    ("ReadTex", "readtex"),
-                    ("ReadDraw", "readdraw"),
-                ],
-                "default": "readtex",
-                "advanced": True,
-                "help": (
-                    "Select which mode is used for onscreen render targets:\n"
-                    "<b>Disabled</b>: Disables render target locking \n"
-                    "<b>ReadTex</b>: (Wine default) Reads by glReadPixels, "
-                    "writes by drawing a textured quad \n"
-                    "<b>ReadDraw</b>: Uses glReadPixels for reading and "
-                    "writing"
-                ),
-            },
-            {
                 "option": "UseXVidMode",
                 "label": "Use XVidMode to switch resolutions",
                 "type": "bool",
@@ -382,6 +369,7 @@ class wine(Runner):
                 "option": "Audio",
                 "label": "Audio driver",
                 "type": "choice",
+                "advanced": True,
                 "choices": [
                     ("Auto", "auto"),
                     ("ALSA", "alsa"),
@@ -396,10 +384,10 @@ class wine(Runner):
                 ),
             },
             {
-                "option": "ShowCrashDialog",
-                "label": "Show crash dialogs",
-                "type": "bool",
-                "default": False,
+                "option": "overrides",
+                "type": "mapping",
+                "label": "DLL overrides",
+                "help": "Sets WINEDLLOVERRIDES when launching the game.",
             },
             {
                 "option": "show_debug",
@@ -413,18 +401,17 @@ class wine(Runner):
                     ("Full (CAUTION: Will cause MASSIVE slowdown)", "+all"),
                 ],
                 "default": "-all",
-                "advanced": True,
                 "help": (
                     "Output debugging information in the game log "
                     "(might affect performance)"
                 ),
             },
             {
-                "option": "overrides",
-                "type": "mapping",
-                "label": "DLL overrides",
+                "option": "ShowCrashDialog",
+                "label": "Show crash dialogs",
+                "type": "bool",
+                "default": False,
                 "advanced": True,
-                "help": "Sets WINEDLLOVERRIDES when launching the game.",
             },
             {
                 "option": "autoconf_joypad",
@@ -442,6 +429,7 @@ class wine(Runner):
                 "type": "bool",
                 "label": "Create a sandbox for wine folders",
                 "default": True,
+                "advanced": True,
                 "help": (
                     "Do not use $HOME for desktop integration folders.\n"
                     "By default, it use the directories in the confined "
@@ -453,6 +441,7 @@ class wine(Runner):
                 "type": "directory_chooser",
                 "label": "Sandbox directory",
                 "help": "Custom directory for desktop integration folders.",
+                "advanced": True,
             },
         ]
 
@@ -622,6 +611,17 @@ class wine(Runner):
     def run_joycpl(self, *args):
         self.prelaunch()
         joycpl(prefix=self.prefix_path, wine_path=self.get_executable(), config=self)
+
+    def run_winekill(self, *args):
+        """Runs wineserver -k."""
+        winekill(
+            self.prefix_path,
+            arch=self.wine_arch,
+            wine_path=self.get_executable(),
+            env=self.get_env(),
+            initial_pids=self.get_pids(),
+        )
+        return True
 
     def set_regedit_keys(self):
         """Reset regedit keys according to config."""
@@ -831,17 +831,6 @@ class wine(Runner):
                 command.append(arg)
         launch_info["command"] = command
         return launch_info
-
-    def stop(self):
-        """The kill command runs wineserver -k."""
-        winekill(
-            self.prefix_path,
-            arch=self.wine_arch,
-            wine_path=self.get_executable(),
-            env=self.get_env(),
-            initial_pids=self.get_pids(),
-        )
-        return True
 
     @staticmethod
     def parse_wine_path(path, prefix_path=None):

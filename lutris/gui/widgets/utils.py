@@ -1,9 +1,12 @@
 import os
+import array
+from PIL import Image
 from gi.repository import GdkPixbuf, GLib, Gtk
 
 from lutris.util.log import logger
 from lutris.util import datapath
 from lutris.util import system
+from lutris import settings
 
 
 UNAVAILABLE_GAME_OVERLAY = os.path.join(datapath.get(), "media/unavailable.png")
@@ -71,10 +74,10 @@ def get_icon(icon_name, format="image", size=None, icon_type="runner"):
     raise ValueError("Invalid arguments")
 
 
-def get_overlay(size):
+def get_overlay(overlay_path, size):
     width, height = size
     transparent_pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(
-        UNAVAILABLE_GAME_OVERLAY, width, height
+        overlay_path, width, height
     )
     transparent_pixbuf = transparent_pixbuf.scale_simple(
         width, height, GdkPixbuf.InterpType.NEAREST
@@ -97,7 +100,7 @@ def get_pixbuf_for_game(game_slug, icon_type, is_installed=True):
 
     pixbuf = get_pixbuf(icon_path, size, fallback=default_icon_path)
     if not is_installed:
-        transparent_pixbuf = get_overlay(size).copy()
+        transparent_pixbuf = get_overlay(UNAVAILABLE_GAME_OVERLAY, size).copy()
         pixbuf.composite(
             transparent_pixbuf,
             0,
@@ -113,6 +116,50 @@ def get_pixbuf_for_game(game_slug, icon_type, is_installed=True):
         )
         return transparent_pixbuf
     return pixbuf
+
+
+def convert_to_background(background_path, target_size=(320, 550)):
+    """Converts a image to a pane background"""
+
+    coverart = Image.open(background_path)
+    coverart = coverart.convert("RGBA")
+
+    target_width, target_height = target_size
+    orig_width, orig_height = coverart.size
+
+    # Resize and crop coverart
+    width = int(orig_width * (target_height / orig_height))
+    offset = int((width - target_width) / 2)
+    coverart = coverart.resize((width, target_height), resample=Image.BICUBIC)
+    coverart = coverart.crop((offset, 0, target_width + offset, target_height))
+
+    # Apply a tint to the base image
+    tint = Image.new('RGBA', (target_width, target_height), (0, 0, 0, 255))
+    coverart = Image.blend(coverart, tint, 0.8)
+
+    # Paste coverart on transparent image while applying a gradient mask
+    background = Image.new('RGBA', (target_width, target_height), (255, 255, 255, 0))
+    mask = Image.open(os.path.join(datapath.get(), "media/mask.png"))
+    background.paste(coverart, mask=mask)
+
+    return background
+
+
+def image2pixbuf(image):
+    """Converts a PIL Image to a GDK Pixbuf"""
+    image_array = array.array('B', image.tobytes())
+    width, height = image.size
+    return GdkPixbuf.Pixbuf.new_from_data(
+        image_array, GdkPixbuf.Colorspace.RGB, True, 8, width, height, width * 4
+    )
+
+
+def get_pixbuf_for_panel(game_slug):
+    """Return the pixbuf for the game panel background"""
+    source_path = os.path.join(settings.COVERART_PATH, "%s.jpg" % game_slug)
+    if not os.path.exists(source_path):
+        source_path = os.path.join(datapath.get(), "media/generic-panel-bg.jpg")
+    return image2pixbuf(convert_to_background(source_path))
 
 
 def get_builder_from_file(glade_file):

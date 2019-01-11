@@ -32,9 +32,9 @@ gi.require_version("GnomeDesktop", "3.0")
 from gi.repository import Gio, GLib, Gtk
 from lutris import pga
 from lutris import settings
-from lutris.running_game import RunningGame
 from lutris.config import check_config
 from lutris.gui.dialogs import ErrorDialog, InstallOrPlayDialog
+from lutris.gui.installerwindow import InstallerWindow
 from lutris.migrations import migrate
 from lutris.platforms import update_platforms
 from lutris.settings import read_setting, VERSION
@@ -44,10 +44,10 @@ from lutris.util.steam.config import get_steamapps_paths
 from lutris.util import datapath
 from lutris.util.log import logger, console_handler, DEBUG_FORMATTER
 from lutris.util.resources import parse_installer_url
-from lutris.util.monitor import set_child_subreaper
 from lutris.util.system import check_libs
 from lutris.util.drivers import check_driver
 from lutris.util.vkquery import check_vulkan
+from lutris.util.wine.dxvk import init_dxvk_versions
 
 from .lutriswindow import LutrisWindow
 from lutris.gui.lutristray import LutrisTray
@@ -60,7 +60,6 @@ class Application(Gtk.Application):
             flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE,
         )
         logger.info("Running Lutris %s", settings.VERSION)
-        set_child_subreaper()
         gettext.bindtextdomain("lutris", "/usr/share/locale")
         gettext.textdomain("lutris")
 
@@ -70,11 +69,11 @@ class Application(Gtk.Application):
         check_driver()
         check_libs()
         check_vulkan()
+        init_dxvk_versions()
 
         GLib.set_application_name(_("Lutris"))
         self.running_games = []
         self.window = None
-        self.help_overlay = None
         self.tray = None
         self.css_provider = Gtk.CssProvider.new()
 
@@ -200,19 +199,6 @@ class Application(Gtk.Application):
             "URI",
         )
 
-    def set_connect_state(self, connected):
-        return  # XXX
-        # We fiddle with the menu directly which is rather ugly
-        menu = (
-            self.get_menubar().get_item_link(0, "submenu").get_item_link(0, "section")
-        )
-        menu.remove(0)  # Assert that it is the very first item
-        if connected:
-            item = Gio.MenuItem.new("Disconnect", "win.disconnect")
-        else:
-            item = Gio.MenuItem.new("Connect", "win.connect")
-        menu.prepend_item(item)
-
     def do_startup(self):
         Gtk.Application.do_startup(self)
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -227,20 +213,6 @@ class Application(Gtk.Application):
         )
         appmenu = builder.get_object("app-menu")
         self.set_app_menu(appmenu)
-
-        if Gtk.get_major_version() > 3 or Gtk.get_minor_version() >= 20:
-            builder = Gtk.Builder.new_from_file(
-                os.path.join(datapath.get(), "ui", "help-overlay.ui")
-            )
-            self.help_overlay = builder.get_object("help_overlay")
-
-            it = appmenu.iterate_item_links(appmenu.get_n_items() - 1)
-            assert it.next()
-            last_section = it.get_value()
-            shortcuts_item = Gio.MenuItem.new(
-                _("Keyboard Shortcuts"), "win.show-help-overlay"
-            )
-            last_section.prepend_item(shortcuts_item)
 
         menubar = builder.get_object("menubar")
         self.set_menubar(menubar)
@@ -257,12 +229,11 @@ class Application(Gtk.Application):
     def do_activate(self):
         if not self.window:
             self.window = LutrisWindow(application=self)
-            if hasattr(self.window, "set_help_overlay"):
-                self.window.set_help_overlay(self.help_overlay)
             screen = self.window.props.screen
             Gtk.StyleContext.add_provider_for_screen(
                 screen, self.css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
+        self.window.present()
 
     @staticmethod
     def _print(command_line, string):
@@ -371,17 +342,16 @@ class Application(Gtk.Application):
                 action = "install"
 
         if action == "install":
-            self.window.present()
-            self.window.on_install_clicked(
-                game_slug=game_slug, installer_file=installer_file, revision=revision
+            InstallerWindow(
+                game_slug=game_slug,
+                installer_file=installer_file,
+                revision=revision,
+                parent=self,
+                application=self.application,
             )
         elif action in ("rungame", "rungameid"):
             if not db_game or not db_game["id"]:
-                if self.window.is_visible():
-                    logger.info("No game found in library")
-                else:
-                    logger.info("No game found in library, shutting down")
-                    self.do_shutdown()
+                logger.warning("No game found in library")
                 return 0
 
             logger.info("Launching %s", db_game["name"])
@@ -389,18 +359,23 @@ class Application(Gtk.Application):
             # If game is not installed, show the GUI before running. Otherwise leave the GUI closed.
             if not db_game["installed"]:
                 self.window.present()
-            self.window.on_game_run(game_id=db_game["id"])
+            self.launch(db_game["id"])
 
         else:
             self.window.present()
 
         return 0
 
-    def launch(self, game_id):
+    def launch(self, game):
         """Launch a Lutris game"""
-        running_game = RunningGame(game_id, application=self, window=self.window)
-        self.running_games.append(running_game)
-        running_game.play()
+        logger.debug("Adding game %s (%s) to running games", game, id(game))
+        self.running_games.append(game)
+        game.play()
+
+    def get_game_by_id(self, game_id):
+        for game in self.running_games:
+            if game.id == game_id:
+                return game
 
     @staticmethod
     def get_lutris_action(url):
@@ -409,7 +384,7 @@ class Application(Gtk.Application):
         if url:
             url = url.get_strv()
 
-        if url and len(url):
+        if url:
             url = url[0]  # TODO: Support multiple
             installer_info = parse_installer_url(url)
             if installer_info is False:

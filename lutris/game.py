@@ -4,37 +4,23 @@ import json
 import time
 import shlex
 import subprocess
-from functools import wraps
 
 from gi.repository import GLib, Gtk, GObject
 
 from lutris import pga
 from lutris import runtime
-from lutris.exceptions import LutrisError, GameConfigError
+from lutris.exceptions import GameConfigError, watch_lutris_errors
 from lutris.util import xdgshortcuts
 from lutris.runners import import_runner, InvalidRunner, wine
 from lutris.util import audio, display, jobs, system, strings
 from lutris.util.log import logger
 from lutris.config import LutrisConfig
-from lutris.command import MonitoredCommand, HEARTBEAT_DELAY
+from lutris.command import MonitoredCommand
 from lutris.gui import dialogs
 from lutris.util.timer import Timer
 
 
-def watch_lutris_errors(function):
-    """Decorator used to catch LutrisError exceptions and send events"""
-
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-        """Catch all LutrisError exceptions and emit an event."""
-        try:
-            return function(*args, **kwargs)
-        except LutrisError as ex:
-            game = args[0]
-            logger.error("Unable to run %s", game.name)
-            game.emit("game-error", ex.message)
-
-    return wrapper
+HEARTBEAT_DELAY = 2000
 
 
 class Game(GObject.Object):
@@ -48,6 +34,7 @@ class Game(GObject.Object):
 
     __gsignals__ = {
         "game-error": (GObject.SIGNAL_RUN_FIRST, None, (str,)),
+        "game-start": (GObject.SIGNAL_RUN_FIRST, None, ()),
         "game-stop": (GObject.SIGNAL_RUN_FIRST, None, ())
     }
 
@@ -69,14 +56,15 @@ class Game(GObject.Object):
         self.directory = game_data.get("directory") or ""
         self.name = game_data.get("name") or ""
 
-        self.is_installed = bool(game_data.get("installed")) or False
+        self.is_installed = bool(game_data.get("installed"))
         self.platform = game_data.get("platform") or ""
         self.year = game_data.get("year") or ""
         self.lastplayed = game_data.get("lastplayed") or 0
+        self.playtime = game_data.get("playtime") or 0.0
         self.game_config_id = game_data.get("configpath") or ""
         self.steamid = game_data.get("steamid") or ""
-        self.has_custom_banner = bool(game_data.get("has_custom_banner")) or False
-        self.has_custom_icon = bool(game_data.get("has_custom_icon")) or False
+        self.has_custom_banner = bool(game_data.get("has_custom_banner"))
+        self.has_custom_icon = bool(game_data.get("has_custom_icon"))
 
         self.load_config()
         self.game_runtime_config = {}
@@ -87,7 +75,7 @@ class Game(GObject.Object):
         self.log_buffer = Gtk.TextBuffer()
         self.log_buffer.create_tag("warning", foreground="red")
 
-        self.timer = Timer("hours")
+        self.timer = Timer()
         try:
             self.playtime = float(game_data.get("playtime") or 0.0)
         except ValueError:
@@ -101,6 +89,10 @@ class Game(GObject.Object):
         if self.runner_name:
             value += " (%s)" % self.runner_name
         return value
+
+    @property
+    def formatted_playtime(self):
+        return strings.get_formatted_playtime(self.playtime)
 
     @staticmethod
     def show_error_message(message):
@@ -491,7 +483,7 @@ class Game(GObject.Object):
             self.game_thread.stop_func = self.runner.stop
         self.game_thread.start()
         self.state = self.STATE_RUNNING
-
+        self.emit("game-start")
         self.heartbeat = GLib.timeout_add(HEARTBEAT_DELAY, self.beat)
 
     def xboxdrv_start(self, config):
@@ -540,12 +532,16 @@ class Game(GObject.Object):
             return False
         return True
 
+    def stop_timer(self):
+        """Stops the timer"""
+        if not self.timer.finished:
+            self.timer.end()
+            self.playtime = (self.timer.duration + self.playtime) / 3600
+
     def stop(self):
+        """Stops the game"""
         if self.state == self.STATE_STOPPED:
             logger.debug("Game already stopped")
-            return
-        if not self.runner:
-            self.error("No game actually running, this shouldn't happen")
             return
 
         logger.info("Stopping %s", self)
@@ -555,16 +551,12 @@ class Game(GObject.Object):
         if self.game_thread:
             jobs.AsyncCall(self.game_thread.stop, None)
         self.state = self.STATE_STOPPED
-        if not self.timer.finished:
-            self.timer.end()
-            self.playtime = self.timer.duration + self.playtime
+        self.stop_timer()
 
     def on_game_quit(self):
         """Restore some settings and cleanup after game quit."""
 
-        if not self.timer.finished:
-            self.timer.end()
-            self.playtime = self.timer.duration + self.playtime
+        self.stop_timer()
 
         if self.prelaunch_executor and self.prelaunch_executor.is_running:
             logger.info("Stopping prelaunch script")
