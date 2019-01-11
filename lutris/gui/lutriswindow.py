@@ -117,9 +117,24 @@ class LutrisWindow(Gtk.ApplicationWindow):
         self.show_tray_icon = (
             settings.read_setting("show_tray_icon", default="false").lower() == "true"
         )
-
+        self.show_hidden_games = (
+            settings.read_setting("show_hidden_games", default="true").lower() == "true"
+        )
+        
         # Window initialization
-        self.game_list = pga.get_games(show_installed_first=self.show_installed_first)
+        game_list_raw = pga.get_games(show_installed_first=self.show_installed_first)
+        print("Show hidden games: " + str(self.show_hidden_games))
+        if self.show_hidden_games:
+            self.game_list = game_list_raw
+        else:
+            # Load the ignores and filter the game list
+            ignores = settings.read_setting("library_ignores",
+                                                section="lutris",
+                                                default="").split(",")
+            should_be_hidden = lambda game: not str(game["id"]) in ignores
+            self.game_list = list(filter(should_be_hidden, game_list_raw))
+
+
         self.game_store = GameStore(
             [],
             self.icon_type,
@@ -235,6 +250,11 @@ class LutrisWindow(Gtk.ApplicationWindow):
                 default=self.sidebar_visible,
                 accel="F9",
             ),
+            "show-hidden-games": Action(
+                self.hidden_state_change,
+                type="b",
+                default=self.show_hidden_games,
+            ),
         }
 
         self.actions = {}
@@ -314,8 +334,76 @@ class LutrisWindow(Gtk.ApplicationWindow):
                 "view", "View on Lutris.net",
                 self.on_view_game
             ),
+            (
+                "hide", "Hide game from list",
+                self.on_hide_game
+            ),
+            (
+                "unhide", "Unhide game",
+                self.on_unhide_game
+            ),
         ]
 
+    def on_hide_game(self, _widget):
+        game = Game(self.view.selected_game)
+
+        # Get the configured ignores, append our new ignore and write
+        # it back
+        ignores_str = settings.read_setting("libary_ignores",
+                                            section="lutris",
+                                            default="")
+         # NOTE: This here is needed as we would otherwise end up with ignores
+        #       being equal to [""], which then would result in us writing back
+        #       ",<new game's name>" to the settings file.
+        ignores = ignores_str.split(',') if ignores_str != "" else []
+
+        ignores += [str(game.id)]
+        settings.write_setting("library_ignores",
+                               ','.join(ignores),
+                               section="lutris")
+
+        # Update the GUI
+        self.view.remove_game(game.id)
+
+    def on_unhide_game(self, _widget):
+        game = Game(self.view.selected_game)
+
+        # Get the configured ignores, append our new ignore and write
+        # it back
+        ignores_str = settings.read_setting("libary_ignores",
+                                            section="lutris",
+                                            default="")
+        # NOTE: This here is needed as we would otherwise end up with ignores
+        #       being equal to [""], which then would result in us writing back
+        #       ",<new game's name>" to the settings file.
+        ignores_raw = ignores_str.split(',') if ignores_str != "" else []
+
+        ignores = list(filter(lambda x: int(x) != game.id, ignores_raw))
+        settings.write_setting("library_ignores",
+                               ','.join(ignores),
+                               section="lutris")
+
+    def hidden_state_change(self, action, value):
+        self.show_hidden_games = value
+        action.set_state(value);
+
+        # Add or remove hidden games
+        ignores_raw = settings.read_setting("library_ignores",
+                                            section="lutris",
+                                            default="").split(",")
+        ignores = list(filter(lambda x: not x == "", ignores_raw))
+
+        # TODO: Games are hidden when removing while show-hidden is true
+        for id in ignores:
+            if value:
+                self.view.add_game_by_id(int(id))
+            else:
+                self.view.remove_game(int(id))
+                
+        settings.write_setting("show_hidden_games",
+                               str(self.show_hidden_games).lower(),
+                               section="lutris")
+                
     @property
     def current_view_type(self):
         """Returns which kind of view is currently presented (grid or list)"""
