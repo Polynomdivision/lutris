@@ -126,13 +126,11 @@ class LutrisWindow(Gtk.ApplicationWindow):
         if self.show_hidden_games:
             self.game_list = game_list_raw
         else:
-            # Load the ignores and filter the game list
-            ignores = settings.read_setting("library_ignores",
-                                                section="lutris",
-                                                default="").split(",")
-            should_be_hidden = lambda game: not str(game["id"]) in ignores
+            # Check if the PGA contains game IDs that the user does not
+            # want to see
+            ignores = pga.get_hidden_ids()
+            should_be_hidden = lambda game: not game["id"] in ignores
             self.game_list = list(filter(should_be_hidden, game_list_raw))
-
 
         self.game_store = GameStore(
             [],
@@ -344,63 +342,44 @@ class LutrisWindow(Gtk.ApplicationWindow):
         ]
 
     def on_hide_game(self, _widget):
+        """Add a game to the list of hidden games"""
         game = Game(self.view.selected_game)
 
-        # Get the configured ignores, append our new ignore and write
-        # it back
-        ignores_str = settings.read_setting("libary_ignores",
-                                            section="lutris",
-                                            default="")
-         # NOTE: This here is needed as we would otherwise end up with ignores
-        #       being equal to [""], which then would result in us writing back
-        #       ",<new game's name>" to the settings file.
-        ignores = ignores_str.split(',') if ignores_str != "" else []
-
-        ignores += [str(game.id)]
-        settings.write_setting("library_ignores",
-                               ','.join(ignores),
-                               section="lutris")
+        # Append the new hidden ID and save it
+        ignores = pga.get_hidden_ids() + [game.id]
+        pga.set_hidden_ids(ignores)
 
         # Update the GUI
         if not self.show_hidden_games:
             self.view.remove_game(game.id)
 
     def on_unhide_game(self, _widget):
+        """Removes a game from the list of hidden games"""
         game = Game(self.view.selected_game)
 
-        # Get the configured ignores, append our new ignore and write
-        # it back
-        ignores_str = settings.read_setting("libary_ignores",
-                                            section="lutris",
-                                            default="")
-        # NOTE: This here is needed as we would otherwise end up with ignores
-        #       being equal to [""], which then would result in us writing back
-        #       ",<new game's name>" to the settings file.
-        ignores_raw = ignores_str.split(',') if ignores_str != "" else []
-
-        ignores = list(filter(lambda x: int(x) != game.id, ignores_raw))
-        settings.write_setting("library_ignores",
-                               ','.join(ignores),
-                               section="lutris")
+        # Remove the ID to unhide and save it
+        ignores = pga.get_hidden_ids()
+        ignores.remove(game.id)
+        pga.set_hidden_ids(ignores)
 
     def hidden_state_change(self, action, value):
+        """Hides or shows the hidden games"""
         self.show_hidden_games = value
         action.set_state(value);
 
         # Add or remove hidden games
-        ignores_raw = settings.read_setting("library_ignores",
-                                            section="lutris",
-                                            default="").split(",")
-        ignores = list(filter(lambda x: not x == "", ignores_raw))
+        ignores = pga.get_hidden_ids()
         settings.write_setting("show_hidden_games",
                                str(self.show_hidden_games).lower(),
                                section="lutris")
 
+        # If we have to show the hidden games now, we need to add them back to
+        # the view. If we need to hide them, we just remove them from the view
         for id in ignores:
-            if value:
-                self.view.add_game_by_id(int(id))
+            if self.show_hidden_games:
+                self.view.add_game_by_id(id)
             else:
-                self.view.remove_game(int(id))
+                self.view.remove_game(id)
                                 
     @property
     def current_view_type(self):
